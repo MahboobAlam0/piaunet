@@ -87,7 +87,7 @@ This coupling encourages illumination-invariant and physically meaningful segmen
 [Visit Dataset paper](https://ieeexplore.ieee.org/abstract/document/9259867)   
 
 The current codebase assumes a **dataset** consisting of:
-[Visit Dataset] (https://www.kaggle.com/datasets/crowww/a-large-scale-fish-dataset)
+- [Visit Dataset](https://www.kaggle.com/datasets/crowww/a-large-scale-fish-dataset)
 
 - 9000 RGB input images
 - Corresponding 9000 binary masks
