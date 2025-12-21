@@ -82,12 +82,15 @@ This coupling encourages illumination-invariant and physically meaningful segmen
 
 ---
 
-## Dataset Assumptions
+## Dataset: A Large-Scale Dataset for Fish Segmentation and Classification 
 
-The current codebase assumes a **binary segmentation dataset** consisting of:
+[Visit Dataset paper](https://ieeexplore.ieee.org/abstract/document/9259867)   
 
-- RGB input images
-- Corresponding binary masks
+The current codebase assumes a **dataset** consisting of:
+[Visit Dataset] (https://www.kaggle.com/datasets/crowww/a-large-scale-fish-dataset)
+
+- 9000 RGB input images
+- Corresponding 9000 binary masks
 
 Typical directory structure:
 
