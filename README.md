@@ -112,9 +112,9 @@ Mask values:
 - **Loss Function:**  
   - Binary segmentation loss  
   - Physics-guided regularization term  
-- **Optimizer:** Adam / AdamW  
-- **Learning Rate:** Typically `1e-4`  
-- **Evaluation Metrics:** Dice, IoU, Precision, Recall  
+- **Optimizer:** AdamW  
+- **Learning Rate:** Typically `5e-4`  
+- **Evaluation Metrics:** Dice, mIoU, Precision, Recall, Pixel-level Accuracy
 
 The training pipeline supports validation monitoring and checkpoint saving.
 
