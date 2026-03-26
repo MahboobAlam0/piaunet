@@ -1,126 +1,171 @@
-# main.py
 import argparse
-import torch
 import os
+import torch
 import torch.optim as optim
 
-from model import PhysicsAwareAttentionUNet
-from datasets import get_fish_data_loaders
-from train import train_model
-from tune import tune_hyperparameters
-from metricsEvaluations import compute_segmentation_metrics
+# Disable CUDA expandable segments warning (not supported on Windows)
+if torch.cuda.is_available():
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:False"
+
+from dataset.datasets import get_data_loaders
+from model.model import PhysicsInformedAttentionUNet
+from train.train import train_model
+from train.tune import tune_hyperparameters
+from testing.test import test_model # type: ignore
+
+
+def partial_load_checkpoint(model, checkpoint_state):
+    """
+    Load checkpoint with architecture mismatch handling.
+    Load only compatible layers, skip new layers.
+    """
+    model_state = model.state_dict()
+    loaded_keys = set()
+    skipped_keys = set()
+    
+    for key, value in checkpoint_state.items():
+        if key in model_state:
+            # Check shape compatibility
+            if model_state[key].shape == value.shape:
+                model_state[key] = value
+                loaded_keys.add(key)
+            else:
+                skipped_keys.add(f"{key} (shape mismatch)")
+        else:
+            skipped_keys.add(f"{key} (not in new model)")
+    
+    model.load_state_dict(model_state)
+    
+    print(f"Loaded {len(loaded_keys)} compatible layers")
+    if skipped_keys:
+        print(f"Skipped {len(skipped_keys)} incompatible layers")
+    
+    return model
+
+
+def run_test(args):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Load test data
+    _, test_loader = get_data_loaders(
+        root_dir=args.dataset_root,
+        image_size=(256, 256),
+        batch_size=args.batch_size,
+    )
+    
+    # Load model
+    model = PhysicsInformedAttentionUNet(3, args.num_classes).to(device)
+    
+    if not args.checkpoint:
+        print("Please provide --checkpoint for testing")
+        return
+    
+    if not os.path.exists(args.checkpoint):
+        print(f"Checkpoint {args.checkpoint} not found")
+        return
+    
+    checkpoint = torch.load(args.checkpoint, map_location=device)
+    
+    if isinstance(checkpoint, dict) and "model_state" in checkpoint:
+        model.load_state_dict(checkpoint["model_state"])
+    else:
+        model.load_state_dict(checkpoint)
+    
+    print(f"Loaded checkpoint from {args.checkpoint}")
+    
+    # Run test
+    test_model(model, test_loader, device, save_dir=args.save_dir, num_classes=args.num_classes)
+    print(f"Test results saved to {args.save_dir}/")
+
 
 def run_train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # --- Data Loading  ---
-    print("Loading Fish Dataset...")
-    train_loader, val_loader, _ = get_fish_data_loaders(
+    train_loader, val_loader = get_data_loaders(
         root_dir=args.dataset_root,
-        image_size=(256, 256), 
+        image_size=(256, 256),
         batch_size=args.batch_size,
-        num_workers=0
     )
-    print("Fish DataLoaders ready.")
 
-    # --- Model Setup ---
-    print(f"Initializing model with {args.num_classes} classes.")
-    model = PhysicsAwareAttentionUNet(in_ch=3, out_ch=args.num_classes).to(device)
+    model = PhysicsInformedAttentionUNet(3, args.num_classes).to(device)
+
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)  # type: ignore
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
-    # --- Training ---
+    # Load checkpoint if provided
+    start_epoch = 0
+    if args.checkpoint:
+        if os.path.exists(args.checkpoint):
+            checkpoint = torch.load(args.checkpoint, map_location=device)
+            
+            # Handle both old and new checkpoint formats
+            if isinstance(checkpoint, dict) and "model_state" in checkpoint:
+                # New format with full checkpoint
+                try:
+                    model.load_state_dict(checkpoint["model_state"])
+                    optimizer.load_state_dict(checkpoint["optimizer_state"])
+                    scheduler.load_state_dict(checkpoint["scheduler_state"])
+                except RuntimeError:
+                    # Architecture mismatch - do partial loading
+                    print("Architecture changed. Doing partial checkpoint loading...")
+                    partial_load_checkpoint(model, checkpoint["model_state"])
+                    # Reset optimizer and scheduler (they may not be compatible)
+                    print("ℹOptimizer and scheduler reset (architecture changed)")
+                
+                start_epoch = checkpoint.get("epoch", 0)
+            else:
+                # Old format - checkpoint is just model weights
+                try:
+                    model.load_state_dict(checkpoint)
+                except RuntimeError:
+                    # Architecture mismatch - do partial loading
+                    print("Architecture changed. Doing partial checkpoint loading...")
+                    partial_load_checkpoint(model, checkpoint)
+                    print("Optimizer and scheduler initialized fresh")
+                start_epoch = 0
+            
+            print(f"Loaded checkpoint from {args.checkpoint} at epoch {start_epoch}")
+        else:
+            print(f"Checkpoint {args.checkpoint} not found. Starting from scratch.")
+
     train_model(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
         optimizer=optimizer,
         scheduler=scheduler,
-        num_epochs=args.epochs,
+        epochs=args.epochs,
         device=device,
         save_dir=args.save_dir,
-        lambda_seg=args.lambda_seg,
-        lambda_phys=args.lambda_phys,
-        lambda_smooth=args.lambda_smooth,
-        lambda_B_sup=args.lambda_B_sup,
-        lambda_T_sup=args.lambda_T_sup,
-        num_classes=args.num_classes,
+        start_epoch=start_epoch,
     )
 
-def run_test(args):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    print(f"Loading model from {args.checkpoint} for Fish dataset.")
-    model = PhysicsAwareAttentionUNet(in_ch=3, out_ch=args.num_classes)
-    state = torch.load(args.checkpoint, map_location=device)
-    model.load_state_dict(state)
-    model.to(device)
-    model.eval()
 
-    print("Testing on Fish Dataset...")
-    _, _, test_loader = get_fish_data_loaders(
-        root_dir=args.dataset_root,
-        image_size=(256, 256), # Or make this an arg
-        batch_size=args.batch_size,
-        num_workers=0
-        )
-    
-    print("Computing metrics...")
-    seg_metrics = compute_segmentation_metrics(
-        model=model,
-        loader=test_loader,
-        device=device,
-        num_classes=args.num_classes
-    )
-    
-    print("\nTest Results (Fish Dataset):")
-    for k, v in seg_metrics.items():
-        if isinstance(v, list):
-            print(f"  {k}: {v}")
-        else:
-            print(f"  {k:15s}: {v:.4f}")
-    
-    results_path = os.path.join(args.save_dir, "test_metrics.txt")
-    os.makedirs(args.save_dir, exist_ok=True)
-    with open(results_path, 'w') as f:
-        f.write("Test Results (Fish Dataset):\n")
-        for k, v in seg_metrics.items():
-            f.write(f"  {k}: {v}\n")
-    print(f"\nTest metrics saved to {results_path}")
-
-
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["train", "test", "tune"], default="train",
-                        help="Action to perform.")
-    parser.add_argument("--dataset_root", default="./Fish Dataset",
-                        help="Root directory for the Fish dataset.")
-    parser.add_argument("--checkpoint", default="checkpoints/best_model.pth",
-                        help="Path to model checkpoint for testing.")
-    parser.add_argument("--save_dir", default="results",
-                        help="Directory to save test results, plots, and visuals.")
-    parser.add_argument("--epochs", type=int, default=10)
+
+    parser.add_argument("--mode", choices=["train", "test", "tune"], default="train")
+    parser.add_argument("--dataset", default="aqua")
+    parser.add_argument("--dataset_root", default="./AquaOV255")
+    parser.add_argument("--save_dir", default="results")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint for resuming training")
+
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=5e-4)
-    
-    # Loss weights
-    parser.add_argument("--lambda_seg", type=float, default=1.0)
-    parser.add_argument("--lambda_phys", type=float, default=0.3)
-    parser.add_argument("--lambda_smooth", type=float, default=0.05)
-    parser.add_argument("--lambda_B_sup", type=float, default=0.02)
-    parser.add_argument("--lambda_T_sup", type=float, default=0.05)
-    
+
+    parser.add_argument("--lambda_smooth", type=float, default=0.01)
+    parser.add_argument("--num_classes", type=int, default=2)
+
     args = parser.parse_args()
 
-    args.num_classes = 2 # Always 2 for Fish Dataset
-    
     if args.mode == "train":
         run_train(args)
     elif args.mode == "test":
         run_test(args)
     elif args.mode == "tune":
-        print("Running hyperparameter tuning (configured in tune.py for Fish Dataset)...")
-        # Note: tune.py might have its own num_workers setting.
-        # This is the *real* fix (see tune.py update)
-        tune_hyperparameters()
+        tune_hyperparameters(args.dataset, args.dataset_root)
 
+
+if __name__ == "__main__":
+    main()

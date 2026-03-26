@@ -1,0 +1,19 @@
+AquaOV255
+.venv
+.vscode
+__pycache__
+checkpoints
+checkpoints_baselines
+checkpoints_suim
+checkpoints_suim_finetune
+Fish Dataset
+results
+results_test
+results_tuning
+SUIM
+temp_splits
+test_visuals_baselines
+tuning_results
+bad_masks.txt
+test_results
+physics_model.ipynb
