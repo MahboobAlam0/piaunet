@@ -34,7 +34,7 @@ NUM_WORKERS = 0
 IMAGE_SIZE = (256, 256)
 NUM_CLASSES = 2 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-VISUALIZE_DIR = "./test_visuals_baselines" 
+VISUALIZE_DIR = "./test_visuals_baselines_1" 
 
 set_seed(42)
 
@@ -157,7 +157,7 @@ def main():
         "DeepLabV3Plus": DeepLabV3Plus(pretrained=True, out_ch=NUM_CLASSES)
     }
 
-    os.makedirs("./checkpoints_baselines", exist_ok=True)
+    os.makedirs("./checkpoints_baselines_1", exist_ok=True)
     results_test: Dict[str, Dict[str, Any]] = {}
     results_best_epoch: Dict[str, Any] = {}
 
