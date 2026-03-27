@@ -1,20 +1,20 @@
 # comparingScript.py
-"""
-comparingScript.py
-MODIFIED: Compare U-Net, Attention U-Net, and DeepLabV3+ models on the
-Fish Dataset using the project's 'compute_segmentation_metrics' function.
-- Now prints model parameters for each model being compared.
-"""
 
 import torch
 from torch.utils.data import DataLoader
-# --- MODIFIED: Import from your project's files ---
-from dataset.datasets import get_fish_data_loaders # type: ignore
-from metrics.metricsEvaluations import compute_segmentation_metrics
+import sys
+import os
+
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# --- IMPORTS from your project's files ---
+from dataset.datasets import get_data_loaders  # type: ignore
 # ------------------------------------------------
 from baseline_models.comparisonModels import (
-    UNet, AttentionUNet, DeepLabV3Plus, 
-    train_one_model, set_seed, safe_resize_tensor, METRIC_KEYS
+    DeepLabV3Plus, 
+    train_one_model, compute_segmentation_metrics_baseline,
+    set_seed, safe_resize_tensor, METRIC_KEYS
 )
 import torch.nn.functional as F
 import os
@@ -23,24 +23,50 @@ import traceback
 from torch.amp.autocast_mode import autocast
 from torchvision.utils import save_image
 
-# ===========================================================
+
+
+def get_three_loaders(root_dir: str, image_size=(256, 256), batch_size=4, num_workers=0):
+    """
+    Get train, validation, and test loaders from AquaOV255 dataset.
+    Since get_data_loaders returns train/val, we use val as test.
+    """
+    train_loader, val_loader = get_data_loaders(
+        root_dir=root_dir,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers
+    )
+    # For now, use val_loader as test_loader
+    return train_loader, val_loader, val_loader
+
+
 # CONFIGURATION
-# ============================================================
-FISH_ROOT = "./Fish Dataset" 
-BATCH_SIZE = 8
-EPOCHS = 2
+
+# Choose dataset: "AQUA" or "FISH"
+DATASET = "AQUA"  # Change to "FISH" to use Fish Dataset
+
+if DATASET == "AQUA":
+    DATASET_ROOT = "./AquaOV255"
+    BATCH_SIZE = 4  # Smaller batch size for AQUA
+    EPOCHS = 50
+    VISUALIZE_DIR = "./test_visuals_baselines_aqua_1"
+else:
+    DATASET_ROOT = "./Fish Dataset"
+    BATCH_SIZE = 8
+    EPOCHS = 2
+    VISUALIZE_DIR = "./test_visuals_baselines_2"
+
 LEARNING_RATE = 1e-4
 NUM_WORKERS = 0
 IMAGE_SIZE = (256, 256)
 NUM_CLASSES = 2 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-VISUALIZE_DIR = "./test_visuals_baselines_1" 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
 
 set_seed(42)
 
-# ============================================================
+
 # VISUALIZATION HELPERS
-# ============================================================
+
 def denormalize_image(tensor: torch.Tensor, 
                       mean=(0.485, 0.456, 0.406), 
                       std=(0.229, 0.224, 0.225)) -> torch.Tensor:
@@ -63,9 +89,9 @@ def mask_to_rgb(mask: torch.Tensor, num_classes: int) -> torch.Tensor:
     color_mask = norm_mask.unsqueeze(1).repeat(1, 3, 1, 1) # [B, 3, H, W]
     return color_mask
 
-# ============================================================
-# MODEL EVALUATION (MODIFIED)
-# ============================================================
+
+# MODEL EVALUATION 
+
 def evaluate_model(model: torch.nn.Module, dataloader: DataLoader, device: torch.device, 
                    visualize_dir: str, model_name: str, 
                    num_classes: int) -> Dict[str, Any]: # <-- Return Any for lists
@@ -77,7 +103,7 @@ def evaluate_model(model: torch.nn.Module, dataloader: DataLoader, device: torch
     
     # --- 1. Compute Full Dataset Metrics ---
     print(f"Computing full test metrics for {model_name}...")
-    avg_metrics = compute_segmentation_metrics(
+    avg_metrics = compute_segmentation_metrics_baseline(
         model, dataloader, device, num_classes
     )
     
@@ -129,9 +155,8 @@ def evaluate_model(model: torch.nn.Module, dataloader: DataLoader, device: torch
 
     return avg_metrics
 
-# ============================================================
-# MAIN COMPARISON LOGIC (MODIFIED)
-# ============================================================
+
+# MAIN COMPARISON LOGIC 
 def main():
     if DEVICE.type == 'cuda':
         print(f" Using device: {DEVICE.type.upper()} ({torch.cuda.get_device_name(0)})")
@@ -141,19 +166,20 @@ def main():
     os.makedirs(VISUALIZE_DIR, exist_ok=True)
     print(f"[INFO] Test visualizations will be saved to: {VISUALIZE_DIR}")
 
-    # --- Load Fish Dataset ---
-    train_loader, val_loader, test_loader = get_fish_data_loaders(
-        root_dir=FISH_ROOT,
+    # --- Load Dataset (AquaOV255 or Fish) ---
+    print(f"\n[INFO] Loading {DATASET} dataset from: {DATASET_ROOT}")
+    train_loader, val_loader, test_loader = get_three_loaders(
+        root_dir=DATASET_ROOT,
         image_size=IMAGE_SIZE,
         batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
-        random_state=42
+        num_workers=NUM_WORKERS
     )
+    print("[INFO] Dataset loaded successfully!")
 
     # --- Instantiate models ---
     models_dict = {
-        "U-Net": UNet(in_ch=3, out_ch=NUM_CLASSES),
-        "AttentionUNet": AttentionUNet(in_ch=3, out_ch=NUM_CLASSES),
+        #"U-Net": UNet(in_ch=3, out_ch=NUM_CLASSES),
+        #"AttentionUNet": AttentionUNet(in_ch=3, out_ch=NUM_CLASSES),
         "DeepLabV3Plus": DeepLabV3Plus(pretrained=True, out_ch=NUM_CLASSES)
     }
 
@@ -187,12 +213,12 @@ def main():
                 lr=LEARNING_RATE,
                 weight_decay=1e-4,
                 grad_clip=1.0,
-                save_dir=f"./checkpoints_baselines/{model_name}",
+                save_dir=f"./checkpoints_baselines_2/{model_name}",
                 early_stop_patience=15, 
                 image_size=IMAGE_SIZE
             )
 
-            save_path = f"./checkpoints_baselines/{model_name}/{model_name}_final.pth"
+            save_path = f"./checkpoints_baselines_2/{model_name}/{model_name}_final.pth"
             torch.save(trained_model.state_dict(), save_path)
             print(f" Saved trained {model_name} at {save_path}")
 
@@ -259,8 +285,8 @@ def main():
                 print("\nTraining/Validation metrics not available (training may have failed).")
         print("----------------------------------------------")
 
-# ============================================================
+
 # RUN SCRIPT
-# ============================================================
+
 if __name__ == "__main__":
     main()

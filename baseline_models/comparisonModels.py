@@ -1,13 +1,7 @@
 # comparisonModels.py
-"""
-comparisonModels.py
-Defines UNet, AttentionUNet, DeepLabV3+, and a unified training routine.
-MODIFIED to work with the Fish Dataset (num_classes=2) and the
-project's 'compute_segmentation_metrics' function.
-"""
-
 import torch
 import os
+import sys
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -23,17 +17,114 @@ import random
 import numpy as np
 from typing import Dict, List
 
-# --- MODIFIED: Import from your project's metrics/loss files ---
-from metrics.metricsEvaluations import compute_segmentation_metrics
-from lossfunction.lossFunction import dice_loss, compute_batch_class_weights
-# -----------------------------------------------------------
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+
+
+# loss functions 
+
+def dice_loss(pred_logits: torch.Tensor, target: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+    """
+    Dice loss for multiclass segmentation.
+    pred_logits: [B, C, H, W] logits
+    target: [B, H, W] long tensor with class indices
+    """
+    pred = F.softmax(pred_logits, dim=1)
+    
+    # Convert target to one-hot [B, C, H, W]
+    num_classes = pred_logits.shape[1]
+    target_one_hot = F.one_hot(target.long(), num_classes=num_classes).permute(0, 3, 1, 2).float()
+    
+    intersection = (pred * target_one_hot).sum(dim=(2, 3))  # [B, C]
+    union = pred.sum(dim=(2, 3)) + target_one_hot.sum(dim=(2, 3))  # [B, C]
+    
+    dice = 1.0 - (2.0 * intersection + eps) / (union + eps)
+    return dice.mean()
+
+
+def compute_batch_class_weights(target: torch.Tensor, num_classes: int) -> torch.Tensor:
+    """
+    Compute class weights based on inverse frequency in batch.
+    target: [B, H, W] long tensor
+    num_classes: number of classes
+    """
+    device = target.device
+    class_counts = torch.bincount(target.reshape(-1), minlength=num_classes)
+    total_pixels = target.numel()
+    
+    # Inverse frequency weighting
+    class_weights = total_pixels / (num_classes * (class_counts.float() + 1.0))
+    class_weights = class_weights / class_weights.sum() * num_classes  # Normalize
+    
+    return class_weights.to(device)
+
+
+def compute_segmentation_metrics_baseline(model: nn.Module, loader: DataLoader, 
+                                          device: torch.device, num_classes: int) -> Dict:
+    """
+    Compute segmentation metrics for baseline models (outputs single tensor, not tuple).
+    """
+    model.eval()
+    
+    total_tp = torch.zeros(num_classes, device=device)
+    total_fp = torch.zeros(num_classes, device=device)
+    total_fn = torch.zeros(num_classes, device=device)
+    total_pixels = 0
+    correct_pixels = 0
+    
+    with torch.no_grad():
+        for batch in loader:
+            img = batch["image"].to(device)
+            mask = batch["mask"].to(device)
+            
+            # Get predictions from baseline model (single tensor output)
+            logits = model(img)
+            pred = torch.argmax(logits, dim=1).long()
+            
+            # Flatten all predictions and targets
+            pred_flat = pred.reshape(-1)
+            mask_flat = mask.reshape(-1)
+            
+            # Compute per-class metrics
+            for c in range(num_classes):
+                tp = ((pred_flat == c) & (mask_flat == c)).sum().float()
+                fp = ((pred_flat == c) & (mask_flat != c)).sum().float()
+                fn = ((pred_flat != c) & (mask_flat == c)).sum().float()
+                
+                total_tp[c] += tp
+                total_fp[c] += fp
+                total_fn[c] += fn
+            
+            # Pixel accuracy
+            correct_pixels += (pred_flat == mask_flat).sum().item()
+            total_pixels += mask_flat.numel()
+    
+    eps = 1e-6
+    
+    # Compute metrics
+    iou = total_tp / (total_tp + total_fp + total_fn + eps)
+    dice = 2 * total_tp / (2 * total_tp + total_fp + total_fn + eps)
+    precision = total_tp / (total_tp + total_fp + eps)
+    recall = total_tp / (total_tp + total_fn + eps)
+    pixel_accuracy = correct_pixels / total_pixels if total_pixels > 0 else 0.0
+    
+    return {
+        "mIoU": iou.mean().item(),
+        "Dice": dice.mean().item(),
+        "Precision": precision.mean().item(),
+        "Recall": recall.mean().item(),
+        "pixel_accuracy": pixel_accuracy,
+        "Loss": 0.0,  # Placeholder
+    }
 
 # Metric keys for logging
 METRIC_KEYS = ["Loss", "mIoU", "Dice", "Precision", "Recall", "pixel_accuracy"]
 
-# -------------------------------
+
 # Helper: deterministic utilities
-# -------------------------------
+
 def set_seed(seed: int = 42):
     random.seed(seed)
     np.random.seed(seed)
@@ -43,9 +134,9 @@ def set_seed(seed: int = 42):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-# ============================================================
-#   Helper: Safe Resize (ensures consistent sizes for images)
-# ============================================================
+
+#   Helper: Safe Resize 
+
 def safe_resize_tensor(tensor: torch.Tensor, size=(256, 256), is_mask=False) -> torch.Tensor:
     """
     Safely resize tensor to target size.
@@ -79,9 +170,8 @@ def safe_resize_tensor(tensor: torch.Tensor, size=(256, 256), is_mask=False) -> 
         out = out.squeeze(0)
     return out
 
-# ============================================================
-#   Model Definitions (All updated to out_ch=2)
-# ============================================================
+#   Model Definitions 
+
 class DoubleConv(nn.Module):
     """(conv => BN => ReLU) * 2"""
     def __init__(self, in_ch, out_ch):
@@ -305,9 +395,9 @@ class DeepLabV3Plus(nn.Module):
         # -----------------------
 
 
-# ============================================================
-#   Loss (MODIFIED)
-# ============================================================
+
+#   Loss 
+
 def combined_ce_dice_loss(
     logits: torch.Tensor, 
     targets: torch.Tensor, 
@@ -332,9 +422,9 @@ def combined_ce_dice_loss(
     
     return ce_weight * ce + dice_weight * d_loss
 
-# ============================================================
-#   Unified Training Routine (MODIFIED)
-# ============================================================
+
+#   Unified Training Routine 
+
 def train_one_model(model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, 
                     device: torch.device, num_classes: int, num_epochs: int = 5, lr: float = 1e-4, 
                     weight_decay: float = 1e-4, grad_clip: float = 1.0, 
@@ -393,7 +483,7 @@ def train_one_model(model: nn.Module, train_loader: DataLoader, val_loader: Data
                 if isinstance(logits_output, (tuple, list)):
                     logits = logits_output[0]
                 else:
-                    logits = logits_output # It's just a tensor (from UNet, AttnUNet, or DeepLab)
+                    logits = logits_output
                 
                 if logits.shape[-2:] != masks.shape[-2:]:
                     logits = F.interpolate(logits, size=masks.shape[-2:], mode='bilinear', align_corners=False)
@@ -415,7 +505,7 @@ def train_one_model(model: nn.Module, train_loader: DataLoader, val_loader: Data
 
         # --- Calculate Full Train Metrics (Slow) ---
         print("Calculating full training metrics...")
-        train_metrics = compute_segmentation_metrics(
+        train_metrics = compute_segmentation_metrics_baseline(
             model, train_loader, device, num_classes
         )
         avg_train_loss = total_train_loss / n_train
@@ -460,7 +550,7 @@ def train_one_model(model: nn.Module, train_loader: DataLoader, val_loader: Data
 
         # --- Calculate Full Val Metrics ---
         print("Calculating full validation metrics...")
-        val_metrics = compute_segmentation_metrics(
+        val_metrics = compute_segmentation_metrics_baseline(
             model, val_loader, device, num_classes
         )
         avg_val_loss = total_val_loss / n_val
