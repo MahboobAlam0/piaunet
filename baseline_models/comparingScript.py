@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dataset.datasets import get_data_loaders  # type: ignore
 # ------------------------------------------------
 from baseline_models.comparisonModels import (
-    DeepLabV3Plus, 
+    UNet, AttentionUNet, DeepLabV3Plus, 
     train_one_model, compute_segmentation_metrics_baseline,
     set_seed, safe_resize_tensor, METRIC_KEYS
 )
@@ -178,8 +178,8 @@ def main():
 
     # --- Instantiate models ---
     models_dict = {
-        #"U-Net": UNet(in_ch=3, out_ch=NUM_CLASSES),
-        #"AttentionUNet": AttentionUNet(in_ch=3, out_ch=NUM_CLASSES),
+        "U-Net": UNet(in_ch=3, out_ch=NUM_CLASSES),
+        "AttentionUNet": AttentionUNet(in_ch=3, out_ch=NUM_CLASSES),
         "DeepLabV3Plus": DeepLabV3Plus(pretrained=True, out_ch=NUM_CLASSES)
     }
 

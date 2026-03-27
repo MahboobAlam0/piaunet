@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from physics.physicsComponents import PhysicsGuidedModule
+from ..physics.physicsComponents import PhysicsGuidedModule
 
 
 class ConvBlock(nn.Module):
