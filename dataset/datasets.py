@@ -13,9 +13,8 @@ import cv2
 import random
 
 
-# ============================================================
 # CLAHE ENHANCEMENT
-# ============================================================
+
 def apply_clahe(img: Image.Image) -> Image.Image:
     img_np = np.array(img)
 
@@ -31,9 +30,8 @@ def apply_clahe(img: Image.Image) -> Image.Image:
     return Image.fromarray(enhanced)
 
 
-# ============================================================
 # MASK PROCESSING
-# ============================================================
+
 def process_mask(mask_path: str):
     mask = np.array(Image.open(mask_path))
 

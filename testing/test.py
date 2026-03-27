@@ -7,9 +7,9 @@ from metrics.metricsEvaluations import compute_segmentation_metrics
 from visualization.visualization import save_visual_results, save_individual_result
 
 
-# ----------------------------
+
 # Calculate per-image IoU
-# ----------------------------
+
 def calculate_iou(pred, target):
     """Calculate IoU between prediction and target"""
     intersection = (pred & target).sum().item()
@@ -19,9 +19,9 @@ def calculate_iou(pred, target):
     return intersection / union
 
 
-# ----------------------------
-# TTA (important)
-# ----------------------------
+
+# TTA 
+
 def tta_inference(model, img):
     preds = []
 
@@ -37,9 +37,9 @@ def tta_inference(model, img):
     return torch.mean(torch.stack(preds), dim=0)
 
 
-# ----------------------------
+
 # TEST FUNCTION
-# ----------------------------
+
 @torch.no_grad()
 def test_model(
     model,
@@ -83,10 +83,10 @@ def test_model(
         writer.writerow(["Metric", "Value"])
         for k, v in metrics.items():
             writer.writerow([k, f"{v:.4f}"])
-    print(f"✅ Metrics saved to {csv_path}\n")
+    print(f"Metrics saved to {csv_path}\n")
 
     # visualization (grid) - [Original Image, GT, Pred]
-    print("📊 Generating visualizations...")
+    print("Generating visualizations...")
     batch = next(iter(test_loader))
     imgs = batch["image"].to(device)
     masks = batch["mask"].to(device)
@@ -95,10 +95,10 @@ def test_model(
     preds = torch.argmax(preds, dim=1)
 
     save_visual_results(imgs, masks, preds, save_dir, "test_grid")
-    print(f"   ✅ Test grid [Original Image | GT | Pred] saved to {save_dir}/test_grid.png")
+    print(f"Test grid [Original Image | GT | Pred] saved to {save_dir}/test_grid.png")
 
     # Second pass: Collect individual results and identify top K
-    print(f"\n📈 Collecting results for top {top_k} best predictions...")
+    print(f"\nCollecting results for top {top_k} best predictions...")
     all_results = []
     idx = 0
     
@@ -126,7 +126,7 @@ def test_model(
     top_results = all_results[:top_k]
 
     # Save top results
-    print(f"\n🏆 Saving top {top_k} results to {top_results_dir}:")
+    print(f"\nSaving top {top_k} results to {top_results_dir}:")
     for rank, result in enumerate(top_results, 1):
         save_path = os.path.join(top_results_dir, f"top_{rank:02d}_idx_{result['idx']}_iou_{result['iou']:.4f}.png")
         save_individual_result(
@@ -139,7 +139,7 @@ def test_model(
 
     # Save all individual results
     if save_mode in ["all_individual", "both"]:
-        print(f"\n📁 Saving all {idx} individual predictions to {save_dir}...")
+        print(f"\nSaving all {idx} individual predictions to {save_dir}...")
         for i, result in enumerate(tqdm(all_results, desc="Saving")):
             save_path = os.path.join(save_dir, f"img_{result['idx']}.png")
             save_individual_result(
@@ -148,12 +148,12 @@ def test_model(
                 result['pred'],
                 save_path,
             )
-        print(f"   ✅ Saved {idx} individual predictions\n")
+        print(f"Saved {idx} individual predictions\n")
 
     print("="*50)
-    print("✅ TEST COMPLETE!")
-    print(f"   📊 Overall metrics: {save_dir}/test_metrics.csv")
-    print(f"   🏆 Top {top_k} results: {top_results_dir}/")
+    print("TEST COMPLETE!")
+    print(f"Overall metrics: {save_dir}/test_metrics.csv")
+    print(f"Top {top_k} results: {top_results_dir}/")
     print("="*50)
 
     return metrics

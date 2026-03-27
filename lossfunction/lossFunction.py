@@ -5,9 +5,7 @@ from torchvision.models import vgg16
 from physics.physicsFunctions import estimate_transmission, estimate_backscatter 
 
 
-# ============================================================
-# Perceptual Loss (SAFE + FIXED)
-# ============================================================
+# Perceptual Loss 
 class PerceptualLoss(nn.Module):
     def __init__(self):
         super().__init__()
@@ -39,9 +37,9 @@ class PerceptualLoss(nn.Module):
 perceptual_loss = PerceptualLoss()
 
 
-# ============================================================
+
 # Edge-aware smoothness
-# ============================================================
+
 def edge_aware_smoothness(t, img):
     # Resize image to match transmission map resolution
     img_resized = F.interpolate(img, size=t.shape[-2:], mode="bilinear", align_corners=False)
@@ -62,9 +60,9 @@ def edge_aware_smoothness(t, img):
     return (dx_t * weight_x).mean() + (dy_t * weight_y).mean()
 
 
-# ============================================================
-# Multi-scale physics loss (SAFE)
-# ============================================================
+
+# Multi-scale physics loss 
+
 def multi_scale_physics_loss(j, t, b, img):
     # Ensure all physics tensors are at the same resolution
     # Use minimum size to avoid upsampling artifacts
@@ -95,9 +93,9 @@ def multi_scale_physics_loss(j, t, b, img):
     return loss / len(scales)
 
 
-# ============================================================
-# Deep supervision loss (SAFE)
-# ============================================================
+
+# Deep supervision loss
+
 def deep_supervision_loss(seg_aux, target):
     if len(seg_aux) == 0:
         return torch.zeros(1, device=target.device)
@@ -116,16 +114,15 @@ def deep_supervision_loss(seg_aux, target):
     return loss / len(seg_aux)
 
 
-# ============================================================
-# Safe item conversion (NO ERRORS EVER)
-# ============================================================
+
+# Safe item conversion 
 def safe_item(x):
     return x.detach().item() if torch.is_tensor(x) else float(x)
 
 
-# ============================================================
-# MAIN LOSS FUNCTION (SIMPLIFIED - CORE LOSSES ONLY)
-# ============================================================
+
+# MAIN LOSS FUNCTION 
+
 def physics_aware_loss(
     seg_main,
     seg_aux,
@@ -144,24 +141,22 @@ def physics_aware_loss(
     Physics outputs (j, t, b) are retained for indirect supervision through weak losses,
     but complex multi-scale and perceptual losses are removed for stability.
     """
-    # ----------------------------
-    # 1. Segmentation loss (PRIMARY)
-    # ----------------------------
+  
+    # 1. Segmentation loss
+    
     seg_loss = F.cross_entropy(seg_main, seg_target)
 
-    # ----------------------------
-    # 2. Deep supervision (AUXILIARY)
-    # ----------------------------
+   
+    # 2. Deep supervision
     aux_loss = deep_supervision_loss(seg_aux, seg_target)
 
-    # ----------------------------
-    # 3. Total loss (SIMPLIFIED)
-    # ----------------------------
+    
+    # 3. Total loss 
     total_loss = lambda_seg * seg_loss + lambda_aux * aux_loss
 
-    # ----------------------------
+    
     # 4. Logging dictionary
-    # ----------------------------
+    
     loss_dict = {
         "seg": safe_item(seg_loss),
         "aux": safe_item(aux_loss),

@@ -10,9 +10,7 @@ from metrics.metricsEvaluations import compute_segmentation_metrics
 from visualization.visualization import save_visual_results, save_enhanced_image
 
 
-# ----------------------------
-# SMART CURRICULUM (FIXED)
-# ----------------------------
+# SMART CURRICULUM 
 def get_loss_weights(epoch):
     if epoch < 5:
         return dict(lambda_phys=0.0)
@@ -22,9 +20,8 @@ def get_loss_weights(epoch):
         return dict(lambda_phys=0.03)
 
 
-# ----------------------------
 # TRAIN ONE EPOCH
-# ----------------------------
+
 def train_one_epoch(model, loader, optimizer, scaler, device, epoch):
     model.train()
     total_loss = 0
@@ -68,14 +65,14 @@ def train_one_epoch(model, loader, optimizer, scaler, device, epoch):
     return total_loss / len(loader)
 
 
-# ----------------------------
+
 # FAST VALIDATION
-# ----------------------------
+
 @torch.no_grad()
 def validate(model, loader, device):
     model.eval()
 
-    # 🔥 lightweight validation (not full metrics every epoch)
+    # lightweight validation 
     total_iou = 0
     count = 0
 
@@ -85,7 +82,7 @@ def validate(model, loader, device):
 
         logits, _, _, _, _ = model(img)
 
-        # ✅ FIX: use argmax to convert (batch, 2, H, W) -> (batch, H, W)
+       
         preds = torch.argmax(torch.softmax(logits, dim=1), dim=1).long()
 
         intersection = (preds & mask).sum().item()
@@ -98,9 +95,8 @@ def validate(model, loader, device):
     return total_iou / max(count, 1)
 
 
-# ----------------------------
 # MAIN TRAIN
-# ----------------------------
+
 def train_model(
     model,
     train_loader,
@@ -120,7 +116,7 @@ def train_model(
     patience = 15
     patience_counter = 0
 
-    # Initialize CSV logging (append mode if resuming)
+    # Initialize CSV logging 
     csv_path = os.path.join(save_dir, "metrics.csv")
     csv_exists = os.path.exists(csv_path)
     csv_file = open(csv_path, "a" if csv_exists else "w", newline="")
@@ -152,7 +148,7 @@ def train_model(
         csv_writer.writerow([epoch+1, f"{train_loss:.4f}", f"{pixel_acc:.4f}", f"{miou:.4f}", f"{dice:.4f}", f"{precision:.4f}", f"{recall:.4f}"])
         csv_file.flush()
 
-        # 🔥 visualize occasionally (not every epoch)
+        # visualize occasionally 
         if epoch % 3 == 0:
             batch = next(iter(val_loader))
             imgs = batch["image"].to(device)
@@ -184,15 +180,15 @@ def train_model(
                 "best_miou": best_miou,
             }
             torch.save(checkpoint, os.path.join(save_dir, "best_model.pth"))
-            print(f"✅ Saved best model (mIoU: {best_miou:.4f})")
+            print(f"Saved best model (mIoU: {best_miou:.4f})")
         else:
             patience_counter += 1
-            print(f"⏳ No improvement. Patience: {patience_counter}/{patience}")
+            print(f"No improvement. Patience: {patience_counter}/{patience}")
 
         scheduler.step()
 
         if patience_counter >= patience:
-            print(f"⛔ Early stopping triggered. Best mIoU: {best_miou:.4f}")
+            print(f"Early stopping triggered. Best mIoU: {best_miou:.4f}")
             break
 
     csv_file.close()

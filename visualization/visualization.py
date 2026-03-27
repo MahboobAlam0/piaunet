@@ -3,9 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-# ----------------------------
-# Colorize mask (binary)
-# ----------------------------
+
+# Colorize mask 
 def colorize_mask(mask):
     colors = np.array([
         [0, 0, 0],        # background
@@ -14,9 +13,9 @@ def colorize_mask(mask):
     return colors[mask]
 
 
-# ----------------------------
+
 # Denormalize tensor image
-# ----------------------------
+
 def denormalize_image(img):
     """Denormalize from [-1, 1] to [0, 1]"""
     img = img.detach().cpu().permute(1, 2, 0).numpy()
@@ -24,17 +23,17 @@ def denormalize_image(img):
     return np.clip(img, 0, 1)
 
 
-# ----------------------------
+
 # Convert tensor image safely
-# ----------------------------
+
 def tensor_to_image(img):
     img = img.detach().cpu().permute(1, 2, 0).numpy()
     return np.clip(img, 0, 1)
 
 
-# ----------------------------
+
 # Save grid visualization (Original, GT, Pred)
-# ----------------------------
+
 def save_visual_results(images, gts, preds, save_dir, name="grid"):
     os.makedirs(save_dir, exist_ok=True)
 
@@ -71,9 +70,9 @@ def save_visual_results(images, gts, preds, save_dir, name="grid"):
     plt.close()
 
 
-# ----------------------------
+
 # Save enhanced image separately
-# ----------------------------
+
 def save_enhanced_image(images, enhanced, save_dir, name="enhanced"):
     os.makedirs(save_dir, exist_ok=True)
 
@@ -104,9 +103,8 @@ def save_enhanced_image(images, enhanced, save_dir, name="enhanced"):
     plt.close()
 
 
-# ----------------------------
 # Save physics outputs
-# ----------------------------
+
 def save_physics_maps(images, t, b, j, save_dir, name="physics"):
     os.makedirs(save_dir, exist_ok=True)
 
@@ -143,9 +141,8 @@ def save_physics_maps(images, t, b, j, save_dir, name="physics"):
     plt.close()
 
 
-# ----------------------------
 # Save individual comparison
-# ----------------------------
+
 def save_individual_result(image, gt, pred, save_path):
     img = denormalize_image(image)  # Use denormalize_image for proper normalization
     gt = colorize_mask(gt.cpu().numpy())
