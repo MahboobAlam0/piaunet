@@ -1,63 +1,8 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import vgg16
 from physics.physicsFunctions import estimate_transmission, estimate_backscatter 
 
 
-# Perceptual Loss 
-class PerceptualLoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        vgg = vgg16(weights="IMAGENET1K_V1")
-        self.vgg = nn.Sequential(*list(vgg.features.children())[:8]).eval()
-
-        for p in self.vgg.parameters():
-            p.requires_grad = False
-
-    def forward(self, x, y):
-        # Handle device and precision mismatch: ensure VGG is on same device as input
-        self.vgg.to(x.device)
-        
-        # Convert float16 inputs to float32 for VGG
-        original_dtype = x.dtype
-        x = x.to(torch.float32)
-        y = y.to(torch.float32)
-        
-        vgg_x = self.vgg(x)
-        vgg_y = self.vgg(y)
-        
-        loss = F.l1_loss(vgg_x, vgg_y)
-        
-        # Convert loss back to original dtype if needed
-        return loss.to(original_dtype)
-
-
-perceptual_loss = PerceptualLoss()
-
-
-
-# Edge-aware smoothness
-
-def edge_aware_smoothness(t, img):
-    # Resize image to match transmission map resolution
-    img_resized = F.interpolate(img, size=t.shape[-2:], mode="bilinear", align_corners=False)
-    
-    dx_t = torch.abs(t[:, :, :, :-1] - t[:, :, :, 1:])
-    dy_t = torch.abs(t[:, :, :-1, :] - t[:, :, 1:, :])
-
-    dx_img = torch.mean(
-        torch.abs(img_resized[:, :, :, :-1] - img_resized[:, :, :, 1:]), dim=1, keepdim=True
-    )
-    dy_img = torch.mean(
-        torch.abs(img_resized[:, :, :-1, :] - img_resized[:, :, 1:, :]), dim=1, keepdim=True
-    )
-
-    weight_x = torch.exp(-dx_img)
-    weight_y = torch.exp(-dy_img)
-
-    return (dx_t * weight_x).mean() + (dy_t * weight_y).mean()
 
 
 
